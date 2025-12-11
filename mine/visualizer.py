@@ -13,6 +13,7 @@ class PyBoyPokemonEnv(gym.Env):
         super().__init__()
         self.p_p_action = None
         self.p_action = None
+        self.frames = {}
         self.pyboy = PyBoy(
             rom_path,
             window="null" if render_mode != "human" else "SDL2",
@@ -50,7 +51,19 @@ class PyBoyPokemonEnv(gym.Env):
         # TODO: Define a meaningful reward function
         # if some change on the screen:
         
-        if np.abs(np.sum(screen) - np.sum(self.pyboy.game_area())) > 1000:
+        new_screen = self.pyboy.game_area()
+
+        if new_screen.tobytes() not in self.frames:
+            self.frames[new_screen.tobytes()] = 1
+        else:
+            self.frames[new_screen.tobytes()] += 1
+
+        try:
+            test = np.abs(np.sum(screen) - np.sum(new_screen)) > 1000
+        except OverflowError:
+            test = True
+
+        if test and new_screen.tobytes() not in self.frames or self.frames[new_screen.tobytes()] < 5:
             reward = 1.0  # reward for screen change
         elif action == self.p_p_action and action == self.p_action:
                 reward = -1.0  # small reward for repeating the same action
