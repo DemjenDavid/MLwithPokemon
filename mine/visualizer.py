@@ -11,13 +11,16 @@ class PyBoyPokemonEnv(gym.Env):
 
     def __init__(self, rom_path, render_mode="rgb_array"):
         super().__init__()
-
+        self.p_p_action = None
+        self.p_action = None
         self.pyboy = PyBoy(
             rom_path,
             window="null" if render_mode != "human" else "SDL2",
             debug=False
         )
-        self.pyboy.set_emulation_speed(2)
+        with open("roms/state_file.state", "rb") as f:
+            self.pyboy.load_state(f)
+        self.pyboy.set_emulation_speed(1)
         # Action space: Up, Down, Left, Right, A, B, Start, Select
         self.buttons = [
             "up", "down", "left", "right",
@@ -33,21 +36,32 @@ class PyBoyPokemonEnv(gym.Env):
 
     def step(self, action):
         # Press selected button for a few frames
+        screen = self.pyboy.game_area()
+
         button = self.buttons[action]
         self.pyboy.button_press(button)
-        for _ in range(4):
-            self.pyboy.tick()
+        self.pyboy.tick(4)
         self.pyboy.button_release(button)
-
+        self.pyboy.tick(16)
         # Grab screen
-        frame = self._get_frame()
-
+        print("Frame shape:", self.pyboy.game_area())
+        print(f"Action taken: {button}")
+        print(f"Difference in screen sum: {np.abs(np.sum(screen) - np.sum(self.pyboy.game_area()))} ")
         # TODO: Define a meaningful reward function
-        reward = 0.0
+        # if some change on the screen:
+        
+        if np.abs(np.sum(screen) - np.sum(self.pyboy.game_area())) > 1000:
+            reward = 1.0  # reward for screen change
+        elif action == self.p_p_action and action == self.p_action:
+                reward = -1.0  # small reward for repeating the same action
+        else:
+            reward = -0.1  # default reward
+
         terminated = False
         truncated = False
-
-        return frame, reward, terminated, truncated, {}
+        self.p_p_action = self.p_action
+        self.p_action = action
+        return self._get_frame(), reward, terminated, truncated, {}
     
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -69,7 +83,7 @@ model = PPO.load("./ppo_pokemon_blue.zip")
 visual_env = PyBoyPokemonEnv("roms/Pokemon_Blue.gb", render_mode="human")
 obs, info = visual_env.reset()
 print(f"Starting....")
-for _ in range(1000):
+for _ in range(100):
     action, _states = model.predict(obs, deterministic=True)
     obs, reward, terminated, truncated, info = visual_env.step(action)
     visual_env.render()  # SDL2 window updates
